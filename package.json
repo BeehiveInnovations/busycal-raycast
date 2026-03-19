@@ -5,7 +5,7 @@
   "title": "BusyCal",
   "description": "Create BusyCal events and tasks, search your schedule, and find the next free slot.",
   "icon": "busycal-icon.png",
-  "author": "Beehive Innovations",
+  "author": "fahad",
   "repository": {
     "type": "git",
     "url": "https://github.com/BeehiveInnovations/busycal-raycast.git"
