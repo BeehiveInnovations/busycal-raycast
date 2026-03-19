@@ -83,7 +83,7 @@ export default function CreateTaskCommand() {
         <ActionPanel>
           <Action.SubmitForm
             title="Create Task"
-            icon={Icon.Checklist}
+            icon={Icon.CheckList}
             onSubmit={handleSubmit}
           />
         </ActionPanel>
@@ -100,7 +100,17 @@ export default function CreateTaskCommand() {
         {calendarItems}
       </Form.Dropdown>
       <Form.Checkbox title="" label="Set due date" {...itemProps.hasDueDate} />
-      <Form.DatePicker title="Due" {...itemProps.dueDate} />
+      <Form.DatePicker
+        id={itemProps.dueDate.id}
+        title="Due"
+        value={itemProps.dueDate.value}
+        error={itemProps.dueDate.error}
+        onChange={(newValue) =>
+          itemProps.dueDate.onChange?.(
+            newValue ?? itemProps.dueDate.value ?? new Date(),
+          )
+        }
+      />
       <Form.TextArea
         title="Notes"
         placeholder="Optional notes"

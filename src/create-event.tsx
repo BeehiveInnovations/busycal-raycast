@@ -70,6 +70,10 @@ export function CreateEventForm(props: CreateEventFormProps) {
     validation: {
       title: FormValidation.Required,
       endDate: (value) => {
+        if (!value) {
+          return "Choose an event end time.";
+        }
+
         if (value.getTime() < values.startDate.getTime()) {
           return "The event end time must be on or after the start time.";
         }
@@ -139,8 +143,24 @@ export function CreateEventForm(props: CreateEventFormProps) {
         <Form.Dropdown.Item value="" title="BusyCal Default Calendar" />
         {calendarItems}
       </Form.Dropdown>
-      <Form.DatePicker title="Starts" {...itemProps.startDate} />
-      <Form.DatePicker title="Ends" {...itemProps.endDate} />
+      <Form.DatePicker
+        id={itemProps.startDate.id}
+        title="Starts"
+        value={values.startDate}
+        error={itemProps.startDate.error}
+        onChange={(newValue) =>
+          itemProps.startDate.onChange?.(newValue ?? values.startDate)
+        }
+      />
+      <Form.DatePicker
+        id={itemProps.endDate.id}
+        title="Ends"
+        value={values.endDate}
+        error={itemProps.endDate.error}
+        onChange={(newValue) =>
+          itemProps.endDate.onChange?.(newValue ?? values.endDate)
+        }
+      />
       <Form.Checkbox title="" label="All-day event" {...itemProps.allDay} />
       <Form.TextField
         title="Location"
