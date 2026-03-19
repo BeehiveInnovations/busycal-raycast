@@ -8,6 +8,10 @@ import {
 
 /**
  * Normalizes Raycast event form values into the exact payload accepted by BusyCal automation.
+ *
+ * - Parameter values: Structured event form values from Raycast.
+ * - Returns: The BusyCal automation payload for event creation.
+ * - Throws: When the title is empty or the end date precedes the start date.
  */
 export function buildBusyCalEventInput(
   values: EventFormValues,
@@ -17,6 +21,8 @@ export function buildBusyCalEventInput(
     throw new Error("Enter an event title.");
   }
 
+  // BusyCal can infer defaults, but rejecting an inverted range in Raycast
+  // keeps the validation error attached to the form the user is editing.
   if (values.endDate.getTime() < values.startDate.getTime()) {
     throw new Error("The event end time must be on or after the start time.");
   }
@@ -38,6 +44,10 @@ export function buildBusyCalEventInput(
 
 /**
  * Normalizes Raycast task form values into the exact payload accepted by BusyCal automation.
+ *
+ * - Parameter values: Structured task form values from Raycast.
+ * - Returns: The BusyCal automation payload for task creation.
+ * - Throws: When the title is empty.
  */
 export function buildBusyCalTaskInput(
   values: TaskFormValues,

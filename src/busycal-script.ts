@@ -6,6 +6,14 @@ const fieldSeparator = String.fromCharCode(31);
 
 /**
  * Executes one BusyCal AppleScript block with a small retry loop for startup races.
+ *
+ * The retry is intentionally narrow: BusyCal sometimes needs a moment after
+ * launch before its scripting surface is ready, but other AppleScript failures
+ * should still surface immediately.
+ *
+ * - Parameter body: The BusyCal-specific AppleScript body to execute.
+ * - Returns: Trimmed standard output from `osascript`.
+ * - Throws: The last process error if BusyCal never becomes scriptable.
  */
 export async function runBusyCalScript(
   _installation: BusyCalInstallation,
@@ -36,6 +44,9 @@ export async function runBusyCalScript(
 
 /**
  * Converts the serialized record-list string into a stable JS object array.
+ *
+ * - Parameter rawText: The raw separator-delimited string returned by the shared AppleScript serializer.
+ * - Returns: One dictionary per serialized BusyCal record.
  */
 export function parseSerializedRecords(
   rawText: string,
@@ -67,6 +78,9 @@ export function parseSerializedRecords(
 
 /**
  * Builds one AppleScript `given` clause string from optional key/value pairs.
+ *
+ * - Parameter parameters: Pre-encoded `key:value` fragments, including `undefined` entries.
+ * - Returns: A comma-delimited clause body with empty entries removed.
  */
 export function buildGivenClause(
   parameters: Array<string | undefined>,
@@ -76,6 +90,9 @@ export function buildGivenClause(
 
 /**
  * Returns one AppleScript string literal.
+ *
+ * - Parameter value: Raw text that may contain quotes or backslashes.
+ * - Returns: An escaped AppleScript string literal ready to splice into a script body.
  */
 export function appleScriptString(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -83,6 +100,9 @@ export function appleScriptString(value: string): string {
 
 /**
  * Returns one AppleScript comma-separated string parameter.
+ *
+ * - Parameter values: The string values to join for BusyCal's comma-delimited parameters.
+ * - Returns: An escaped AppleScript string, or `undefined` when no values exist.
  */
 export function appleScriptCSV(values: string[]): string | undefined {
   if (values.length === 0) {
@@ -92,6 +112,12 @@ export function appleScriptCSV(values: string[]): string | undefined {
   return appleScriptString(values.join(","));
 }
 
+/**
+ * Reverses the custom escaping performed by the shared AppleScript serializer.
+ *
+ * - Parameter rawValue: One encoded field value from the record stream.
+ * - Returns: The decoded field text.
+ */
 function decodeSerializedValue(rawValue: string): string {
   return rawValue
     .replaceAll("\\u001F", fieldSeparator)
@@ -100,12 +126,21 @@ function decodeSerializedValue(rawValue: string): string {
     .replaceAll("\\\\", "\\");
 }
 
+/**
+ * Waits before retrying transient BusyCal startup errors.
+ *
+ * - Parameter durationMs: Delay length in milliseconds.
+ * - Returns: A promise that resolves after the timeout elapses.
+ */
 function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
 }
 
+// The extension keeps one shared serializer embedded in every script so each
+// command can return plain strings instead of relying on AppleScript record
+// coercion, which is lossy and inconsistent across command shapes.
 const commonSerializationHandlers = String.raw`
 use framework "Foundation"
 

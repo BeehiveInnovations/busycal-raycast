@@ -1,15 +1,4 @@
 /**
- * User-configurable extension preferences exposed through Raycast settings.
- */
-export interface Preferences {
-  hideOnQuickAdd: boolean;
-  defaultUpcomingDays: string;
-  includeTasksInUpcoming: boolean;
-  defaultMinimumAvailabilityMinutes: string;
-  defaultRespectWorkingHours: boolean;
-}
-
-/**
  * One BusyCal app installation that the extension can target.
  */
 export interface BusyCalInstallation {
@@ -30,6 +19,9 @@ export interface BusyCalCalendar {
   title: string;
 }
 
+/**
+ * BusyCal item kinds that the extension can receive through automation.
+ */
 export type BusyCalItemType =
   | "event"
   | "task"

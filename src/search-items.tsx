@@ -1,88 +1,56 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useCachedPromise } from "@raycast/utils";
 import { queryBusyCalItems } from "./busycal-automation";
 import { formatOccurrence } from "./busycal-date";
-import { resolveBusyCalInstallation } from "./busycal-installation";
-import { BusyCalItem, BusyCalInstallation } from "./types";
+import { useBusyCalInstallation } from "./busycal-hooks";
+import { BusyCalItem } from "./types";
 import { BusyCalItemActions } from "./item-actions";
 
 /**
  * Raycast command entry point for BusyCal item search.
  */
 export default function SearchItemsCommand() {
-  const [installation, setInstallation] = useState<BusyCalInstallation>();
+  const {
+    data: installation,
+    error: installationError,
+    isLoading: isLoadingInstallation,
+  } = useBusyCalInstallation();
   const [searchText, setSearchText] = useState("");
-  const [items, setItems] = useState<BusyCalItem[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string>();
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    let didCancel = false;
-
-    async function loadInstallation() {
-      try {
-        const resolvedInstallation = await resolveBusyCalInstallation();
-        if (!didCancel) {
-          setInstallation(resolvedInstallation);
-        }
-      } catch (error) {
-        if (!didCancel) {
-          setErrorMessage(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
+  const normalizedSearchText = searchText.trim();
+  const {
+    data: matchedItems = [],
+    error: searchError,
+    isLoading: isSearching,
+  } = useCachedPromise(
+    async (
+      activeInstallation: typeof installation,
+      activeSearchText: string,
+    ) => {
+      if (!activeInstallation) {
+        return [];
       }
-    }
 
-    void loadInstallation();
-    return () => {
-      didCancel = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!installation) {
-      return;
-    }
-
-    if (!searchText.trim()) {
-      setItems([]);
-      return;
-    }
-
-    let didCancel = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        setIsLoading(true);
-        try {
-          const matchedItems = await queryBusyCalItems(installation, {
-            searchText: searchText.trim(),
-            itemTypes: ["event", "task"],
-            fetchLimit: 50,
-          });
-          if (!didCancel) {
-            setItems(matchedItems);
-            setErrorMessage(undefined);
-          }
-        } catch (error) {
-          if (!didCancel) {
-            setErrorMessage(
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        } finally {
-          if (!didCancel) {
-            setIsLoading(false);
-          }
-        }
-      })();
-    }, 250);
-
-    return () => {
-      didCancel = true;
-      clearTimeout(timer);
-    };
-  }, [installation, searchText]);
+      return queryBusyCalItems(activeInstallation, {
+        searchText: activeSearchText,
+        itemTypes: ["event", "task"],
+        fetchLimit: 50,
+      });
+    },
+    [installation, normalizedSearchText],
+    {
+      execute: Boolean(installation && normalizedSearchText),
+      initialData: [] as BusyCalItem[],
+      keepPreviousData: true,
+      onError: () => {},
+    },
+  );
+  const items = useMemo(
+    () => (normalizedSearchText ? matchedItems : []),
+    [matchedItems, normalizedSearchText],
+  );
+  const errorMessage = searchError?.message ?? installationError?.message;
+  const isLoading = isLoadingInstallation || isSearching;
 
   return (
     <List

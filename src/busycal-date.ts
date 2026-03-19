@@ -7,6 +7,9 @@ const floatingDateTimePattern =
 
 /**
  * Extracts the BusyCal occurrence seconds encoded into the automation item identifier.
+ *
+ * - Parameter item: A BusyCal item record that does not yet carry decoded occurrence seconds.
+ * - Returns: The same item plus a parsed `occurrenceSeconds` value when the identifier encodes one.
  */
 export function withOccurrenceSeconds(
   item: Omit<BusyCalItem, "occurrenceSeconds">,
@@ -24,6 +27,9 @@ export function withOccurrenceSeconds(
 
 /**
  * Formats one BusyCal occurrence timestamp for list display.
+ *
+ * - Parameter item: The normalized BusyCal item to display.
+ * - Returns: A localized date string, or `undefined` when BusyCal provided no displayable date.
  */
 export function formatOccurrence(item: BusyCalItem): string | undefined {
   const sourceDateString = sourceDateStringForItem(item);
@@ -43,6 +49,9 @@ export function formatOccurrence(item: BusyCalItem): string | undefined {
 
 /**
  * Returns a BusyCal day URL string for one item.
+ *
+ * - Parameter item: The BusyCal item whose primary date should open in BusyCal.
+ * - Returns: A `busycalevent://date/...` URL, or `undefined` when the item has no usable date.
  */
 export function busyCalDateURL(item: BusyCalItem): string | undefined {
   const date = busyCalOccurrenceDate(item);
@@ -55,6 +64,9 @@ export function busyCalDateURL(item: BusyCalItem): string | undefined {
 
 /**
  * Returns a sortable timestamp for one BusyCal item.
+ *
+ * - Parameter item: The BusyCal item to sort.
+ * - Returns: Milliseconds since 1970 for the item's normalized primary date.
  */
 export function busyCalSortTimestamp(item: BusyCalItem): number | undefined {
   const date = busyCalOccurrenceDate(item);
@@ -105,6 +117,20 @@ export function busyCalDateURLForDateString(
   return busyCalDateURLForDate(parsedDate);
 }
 
+/**
+ * Formats one availability slot timestamp for user-facing detail views.
+ */
+export function formatAvailabilityDateTime(
+  dateString: string | undefined,
+): string | undefined {
+  const parsedDate = parseBusyCalDateString(dateString);
+  if (!parsedDate) {
+    return undefined;
+  }
+
+  return formatDate(parsedDate, true);
+}
+
 function busyCalDateURLForDate(date: Date): string {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -124,6 +150,8 @@ function sourceDateStringForItem(item: BusyCalItem): string | undefined {
   }
 
   if (item.type === "task") {
+    // Tasks are surfaced in BusyCal by due date, not by any internal start
+    // date that may exist on the automation record.
     return firstDefined(item.dueDate, item.occurrenceDate, item.startDate);
   }
 

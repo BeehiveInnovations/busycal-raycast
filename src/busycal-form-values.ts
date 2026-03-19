@@ -1,5 +1,14 @@
 /**
  * Formats one Raycast form date value into the BusyCal automation formats that the app already accepts.
+ *
+ * All-day values use BusyCal's bare `YYYY-MM-DD` form. Timed values preserve
+ * the user's local wall clock plus offset so BusyCal receives the same time the
+ * Raycast form displayed.
+ *
+ * - Parameters:
+ *   - date: The Raycast form date value.
+ *   - allDay: Whether BusyCal should treat the value as an all-day date.
+ * - Returns: A BusyCal-compatible date string.
  */
 export function busyCalDateString(date: Date, allDay: boolean): string {
   if (allDay) {

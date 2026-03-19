@@ -1,29 +1,72 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isUnsupportedOpenItemCommandError } from "../src/busycal-open-item-support";
+import {
+  busyCalScriptingDefinitionContainsCommand,
+  classifyBusyCalCommandSupportError,
+} from "../src/busycal-command-support";
 
-test("isUnsupportedOpenItemCommandError recognizes unsupported open-item failures", () => {
+test("classifyBusyCalCommandSupportError recognizes runtime unsupported open-item failures", () => {
   assert.equal(
-    isUnsupportedOpenItemCommandError(
+    classifyBusyCalCommandSupportError(
       "BusyCal got an error: doesn’t understand the open item message.",
-    ),
-    true,
-  );
-  assert.equal(
-    isUnsupportedOpenItemCommandError(
-      "Expected end of line but found identifier.",
+      "open item",
     ),
     true,
   );
 });
 
-test("isUnsupportedOpenItemCommandError ignores unrelated AppleScript failures", () => {
+test("classifyBusyCalCommandSupportError recognizes compile errors when the command is absent from sdef", () => {
   assert.equal(
-    isUnsupportedOpenItemCommandError("Item was not found: abc123"),
+    classifyBusyCalCommandSupportError(
+      "Expected end of line but found identifier.",
+      "open item",
+      '<suite><command name="list calendars"/></suite>',
+    ),
+    true,
+  );
+});
+
+test("classifyBusyCalCommandSupportError ignores compile errors when the command exists in sdef", () => {
+  assert.equal(
+    classifyBusyCalCommandSupportError(
+      "Expected end of line but found identifier.",
+      "open item",
+      '<suite><command name="open item"/></suite>',
+    ),
+    false,
+  );
+});
+
+test("busyCalScriptingDefinitionContainsCommand matches command and synonym names", () => {
+  const scriptingDefinition =
+    '<suite><command name="open item"/><synonym name="create natural language item"/></suite>';
+
+  assert.equal(
+    busyCalScriptingDefinitionContainsCommand(scriptingDefinition, "open item"),
+    true,
+  );
+  assert.equal(
+    busyCalScriptingDefinitionContainsCommand(
+      scriptingDefinition,
+      "create natural language item",
+    ),
+    true,
+  );
+});
+
+test("classifyBusyCalCommandSupportError ignores unrelated AppleScript failures", () => {
+  assert.equal(
+    classifyBusyCalCommandSupportError(
+      "Item was not found: abc123",
+      "open item",
+    ),
     false,
   );
   assert.equal(
-    isUnsupportedOpenItemCommandError("BusyCal is still starting. Please try again in a moment."),
+    classifyBusyCalCommandSupportError(
+      "BusyCal is still starting. Please try again in a moment.",
+      "open item",
+    ),
     false,
   );
 });

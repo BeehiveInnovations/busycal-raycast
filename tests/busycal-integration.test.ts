@@ -237,6 +237,56 @@ test(
 );
 
 test(
+  "createBusyCalTask round-trips an undated task through query and open",
+  {
+    skip: !runIntegration || !runMutating,
+    timeout: 30000,
+  },
+  async () => {
+    const installation = await resolveBusyCalInstallation();
+    const { taskCalendarID } = await resolveMutatingCalendarIDs(installation);
+    const uniqueTitle = `Raycast Undated Task ${Date.now()}`;
+
+    const createdTask = await createBusyCalTask(installation, {
+      title: uniqueTitle,
+      calendarID: taskCalendarID,
+      notes: "BusyCal Raycast undated task integration test",
+    });
+
+    assert.equal(createdTask.title, uniqueTitle);
+    assert.equal(createdTask.calendarID, taskCalendarID);
+    assert.equal(createdTask.dueDate, undefined);
+
+    const queriedItems = await pollForItems(installation, {
+      searchText: uniqueTitle,
+      itemTypes: ["task"],
+      fetchLimit: 10,
+    });
+    const queriedTask = queriedItems.find((item) => item.id === createdTask.id);
+
+    assert.ok(queriedTask, "Expected undated task to be queryable by its returned ID.");
+    assert.equal(queriedTask?.dueDate, undefined);
+
+    const openedTask = await openBusyCalAutomationItem(
+      installation,
+      createdTask.id,
+    );
+    assert.equal(openedTask.id, createdTask.id);
+    assert.equal(openedTask.type, "task");
+
+    await deleteBusyCalTask(installation, createdTask.id);
+
+    const deletedItems = await queryBusyCalItems(installation, {
+      searchText: uniqueTitle,
+      itemTypes: ["task"],
+      fetchLimit: 10,
+    });
+
+    assert.equal(deletedItems.some((item) => item.id === createdTask.id), false);
+  },
+);
+
+test(
   "createBusyCalNaturalLanguageItem round-trips a quick-add event",
   {
     skip: !runIntegration || !runMutating,

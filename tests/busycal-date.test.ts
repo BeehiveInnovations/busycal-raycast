@@ -6,6 +6,7 @@ import {
   busyCalSortTimestamp,
   busyCalDateURL,
   busyCalDateURLForDateString,
+  formatAvailabilityDateTime,
   formatOccurrence,
   withOccurrenceSeconds,
 } from "../src/busycal-date";
@@ -98,6 +99,18 @@ test("formatOccurrence formats fallback date strings", () => {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(startDate);
+
+  assert.equal(formatted, expected);
+});
+
+test("formatAvailabilityDateTime renders local user-facing time instead of raw ISO", () => {
+  const slotDate = new Date(Date.UTC(2026, 2, 19, 16, 49, 51));
+  const formatted = formatAvailabilityDateTime(slotDate.toISOString());
+
+  const expected = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(slotDate);
 
   assert.equal(formatted, expected);
 });

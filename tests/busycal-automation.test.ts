@@ -8,9 +8,9 @@ import {
   buildCreateBusyCalTaskScript,
   buildOpenBusyCalItemScript,
   busyCalItemFromRecord,
-  isUnsupportedNaturalLanguageCommandError,
   queryBusyCalItemsStrategy,
 } from "../src/busycal-automation";
+import { classifyBusyCalCommandSupportError } from "../src/busycal-command-support";
 
 test("queryBusyCalItemsStrategy preserves BusyCal mixed-query semantics", () => {
   assert.equal(queryBusyCalItemsStrategy(undefined), "mixed");
@@ -229,22 +229,26 @@ test("buildOpenBusyCalItemScript reads optional fields defensively", () => {
   assert.match(script, /my emitBooleanField\("isFloating", isFloatingValue\)/);
 });
 
-test("isUnsupportedNaturalLanguageCommandError recognizes outdated app errors", () => {
+test("classifyBusyCalCommandSupportError recognizes outdated NLP command errors", () => {
   assert.equal(
-    isUnsupportedNaturalLanguageCommandError(
-      new Error("2669:2676: syntax error: Expected end of line but found identifier. (-2741)"),
+    classifyBusyCalCommandSupportError(
+      "2669:2676: syntax error: Expected end of line but found identifier. (-2741)",
+      "create natural language item",
+      '<suite><command name="list calendars"/></suite>',
     ),
     true,
   );
   assert.equal(
-    isUnsupportedNaturalLanguageCommandError(
-      new Error("BusyCal got an error: doesn’t understand the create natural language item message."),
+    classifyBusyCalCommandSupportError(
+      "BusyCal got an error: doesn’t understand the create natural language item message.",
+      "create natural language item",
     ),
     true,
   );
   assert.equal(
-    isUnsupportedNaturalLanguageCommandError(
-      new Error("BusyCal got an error: file not found."),
+    classifyBusyCalCommandSupportError(
+      "BusyCal got an error: file not found.",
+      "create natural language item",
     ),
     false,
   );

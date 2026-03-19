@@ -7,22 +7,22 @@ import {
   Icon,
   useNavigation,
 } from "@raycast/api";
-import { useEffect, useMemo, useState } from "react";
+import { showFailureToast } from "@raycast/utils";
+import { useMemo } from "react";
+import { findNextBusyCalAvailable } from "./busycal-automation";
 import {
-  findNextBusyCalAvailable,
-  listBusyCalCalendars,
-} from "./busycal-automation";
-import { busyCalDateURLForDateString } from "./busycal-date";
+  busyCalDateURLForDateString,
+  formatAvailabilityDateTime,
+} from "./busycal-date";
 import { resolveBusyCalInstallation } from "./busycal-installation";
+import { useBusyCalCalendars, useBusyCalInstallation } from "./busycal-hooks";
 import { CreateEventForm } from "./create-event";
 import { openBusyCalURL } from "./busycal-url";
-import {
-  BusyCalCalendar,
-  BusyCalInstallation,
-  BusyCalNextAvailableResult,
-  Preferences,
-} from "./types";
+import { BusyCalInstallation, BusyCalNextAvailableResult } from "./types";
 
+/**
+ * Form state for BusyCal availability lookups.
+ */
 interface AvailabilityFormValues {
   minimumDurationMinutes: string;
   calendarID?: string;
@@ -31,6 +31,8 @@ interface AvailabilityFormValues {
 
 /**
  * Result screen shown after BusyCal returns the next available slot.
+ *
+ * - Parameter props: The resolved BusyCal installation plus the returned slot.
  */
 function AvailabilityResultDetail(props: {
   installation: BusyCalInstallation;
@@ -46,22 +48,27 @@ function AvailabilityResultDetail(props: {
     );
   }
 
-  const slotSummary = [
-    `Start: ${props.result.startDate}`,
-    `End: ${props.result.endDate}`,
-    props.result.timeZoneIdentifier
-      ? `Time Zone: ${props.result.timeZoneIdentifier}`
-      : undefined,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const formattedStart =
+    formatAvailabilityDateTime(props.result.startDate) ??
+    props.result.startDate;
+  const formattedEnd =
+    formatAvailabilityDateTime(props.result.endDate) ?? props.result.endDate;
+  // The automation layer returns ISO timestamps. The detail view intentionally
+  // converts them to local user-facing strings so the result reads like BusyCal,
+  // not like a transport payload.
+  const slotSummary = [`Start: ${formattedStart}`, `End: ${formattedEnd}`].join(
+    "\n",
+  );
   const dateURL = busyCalDateURLForDateString(props.result.startDate);
-  const timeZoneLine = props.result.timeZoneIdentifier
-    ? `\n\nTime Zone: ${props.result.timeZoneIdentifier}`
-    : "";
+  const detailLines = [
+    "# Next Available Slot",
+    "",
+    `- Start: ${formattedStart}`,
+    `- End: ${formattedEnd}`,
+  ];
   return (
     <Detail
-      markdown={`# Next Available Slot\n\nStart: ${props.result.startDate}\n\nEnd: ${props.result.endDate}${timeZoneLine}`}
+      markdown={detailLines.join("\n")}
       actions={
         <ActionPanel>
           <Action.CopyToClipboard
@@ -82,6 +89,7 @@ function AvailabilityResultDetail(props: {
             target={
               <CreateEventForm
                 submitTitle="Create Event in Slot"
+                popOnSuccess
                 initialValues={{
                   startDate: new Date(props.result.startDate),
                   endDate: new Date(props.result.endDate),
@@ -100,48 +108,23 @@ function AvailabilityResultDetail(props: {
  */
 export default function FindNextAvailableCommand() {
   const { push } = useNavigation();
-  const preferences = getPreferenceValues<Preferences>();
-  const [installationError, setInstallationError] = useState<string>();
-  const [installation, setInstallation] = useState<BusyCalInstallation>();
-  const [calendars, setCalendars] = useState<BusyCalCalendar[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let didCancel = false;
-
-    async function loadCalendars() {
-      try {
-        const resolvedInstallation = await resolveBusyCalInstallation();
-        const availableCalendars =
-          await listBusyCalCalendars(resolvedInstallation);
-        if (!didCancel) {
-          setInstallation(resolvedInstallation);
-          setCalendars(
-            availableCalendars.filter((calendar) => calendar.supportsEvents),
-          );
-        }
-      } catch (error) {
-        if (!didCancel) {
-          setInstallationError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (!didCancel) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadCalendars();
-    return () => {
-      didCancel = true;
-    };
-  }, []);
+  const preferences = getPreferenceValues<Preferences.FindNextAvailable>();
+  const {
+    data: installation,
+    error: installationError,
+    isLoading: isLoadingInstallation,
+  } = useBusyCalInstallation();
+  const {
+    data: calendars,
+    error: calendarsError,
+    isLoading: isLoadingCalendars,
+  } = useBusyCalCalendars(installation, "event");
+  const isLoading = isLoadingInstallation || isLoadingCalendars;
+  const errorMessage = calendarsError?.message ?? installationError?.message;
 
   const calendarItems = useMemo(
     () =>
-      calendars.map((calendar) => (
+      (calendars ?? []).map((calendar) => (
         <Form.Dropdown.Item
           key={calendar.calendarID}
           value={calendar.calendarID}
@@ -152,24 +135,27 @@ export default function FindNextAvailableCommand() {
   );
 
   async function handleSubmit(values: AvailabilityFormValues) {
-    const activeInstallation =
-      installation ?? (await resolveBusyCalInstallation());
-    if (!installation) {
-      setInstallation(activeInstallation);
+    try {
+      const activeInstallation =
+        installation ?? (await resolveBusyCalInstallation());
+
+      const result = await findNextBusyCalAvailable(activeInstallation, {
+        minimumDurationMinutes: Number(values.minimumDurationMinutes),
+        calendarIDs: values.calendarID ? [values.calendarID] : undefined,
+        respectWorkingHours: values.respectWorkingHours,
+      });
+
+      await push(
+        <AvailabilityResultDetail
+          installation={activeInstallation}
+          result={result}
+        />,
+      );
+    } catch (error) {
+      await showFailureToast(error, {
+        title: "Could Not Find Availability",
+      });
     }
-
-    const result = await findNextBusyCalAvailable(activeInstallation, {
-      minimumDurationMinutes: Number(values.minimumDurationMinutes),
-      calendarIDs: values.calendarID ? [values.calendarID] : undefined,
-      respectWorkingHours: values.respectWorkingHours,
-    });
-
-    await push(
-      <AvailabilityResultDetail
-        installation={activeInstallation}
-        result={result}
-      />,
-    );
   }
 
   return (
@@ -185,7 +171,7 @@ export default function FindNextAvailableCommand() {
         </ActionPanel>
       }
     >
-      {installationError ? <Form.Description text={installationError} /> : null}
+      {errorMessage ? <Form.Description text={errorMessage} /> : null}
       <Form.Dropdown
         id="minimumDurationMinutes"
         title="Minimum Duration"

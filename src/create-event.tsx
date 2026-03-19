@@ -5,69 +5,108 @@ import {
   Icon,
   showToast,
   Toast,
+  useNavigation,
 } from "@raycast/api";
-import { useEffect, useMemo, useState } from "react";
-import { createBusyCalEvent, listBusyCalCalendars } from "./busycal-automation";
+import { FormValidation, showFailureToast, useForm } from "@raycast/utils";
+import { useMemo } from "react";
+import { createBusyCalEvent } from "./busycal-automation";
 import { buildBusyCalEventInput } from "./busycal-form-submission";
 import { resolveBusyCalInstallation } from "./busycal-installation";
-import { BusyCalCalendar, EventFormValues } from "./types";
+import { useBusyCalCalendars, useBusyCalInstallation } from "./busycal-hooks";
+import { EventFormValues } from "./types";
 
+/**
+ * Shared props for the structured event form.
+ */
 interface CreateEventFormProps {
   initialValues?: Partial<EventFormValues>;
   submitTitle?: string;
+  popOnSuccess?: boolean;
+}
+
+/**
+ * Builds the initial event form state shown to the user.
+ */
+function initialEventFormValues(
+  initialValues?: Partial<EventFormValues>,
+): EventFormValues {
+  const startDate = initialValues?.startDate ?? new Date();
+  const endDate =
+    initialValues?.endDate ?? new Date(startDate.getTime() + 60 * 60 * 1000);
+
+  return {
+    title: initialValues?.title ?? "",
+    calendarID: initialValues?.calendarID ?? "",
+    startDate,
+    endDate,
+    allDay: initialValues?.allDay ?? false,
+    location: initialValues?.location ?? "",
+    notes: initialValues?.notes ?? "",
+  };
 }
 
 /**
  * Structured event form shared by the main command and the availability flow.
+ *
+ * - Parameter props: Optional form defaults and a custom submit title.
  */
 export function CreateEventForm(props: CreateEventFormProps) {
-  const [installationError, setInstallationError] = useState<string>();
-  const [calendars, setCalendars] = useState<BusyCalCalendar[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [startDate, setStartDate] = useState(
-    () => props.initialValues?.startDate ?? new Date(),
-  );
-  const [endDate, setEndDate] = useState(
-    () =>
-      props.initialValues?.endDate ??
-      new Date(startDate.getTime() + 60 * 60 * 1000),
-  );
-  const [allDay, setAllDay] = useState(props.initialValues?.allDay ?? false);
+  const { pop } = useNavigation();
+  const {
+    data: installation,
+    error: installationError,
+    isLoading: isLoadingInstallation,
+  } = useBusyCalInstallation();
+  const {
+    data: calendars,
+    error: calendarsError,
+    isLoading: isLoadingCalendars,
+  } = useBusyCalCalendars(installation, "event");
+  const isLoading = isLoadingInstallation || isLoadingCalendars;
+  const errorMessage = calendarsError?.message ?? installationError?.message;
 
-  useEffect(() => {
-    let didCancel = false;
+  const { handleSubmit, itemProps, values } = useForm<EventFormValues>({
+    initialValues: initialEventFormValues(props.initialValues),
+    validation: {
+      title: FormValidation.Required,
+      endDate: (value) => {
+        if (value.getTime() < values.startDate.getTime()) {
+          return "The event end time must be on or after the start time.";
+        }
 
-    async function loadCalendars() {
+        return undefined;
+      },
+    },
+    async onSubmit(values) {
       try {
-        const installation = await resolveBusyCalInstallation();
-        const availableCalendars = await listBusyCalCalendars(installation);
-        if (!didCancel) {
-          setCalendars(
-            availableCalendars.filter((calendar) => calendar.supportsEvents),
-          );
+        const activeInstallation =
+          installation ?? (await resolveBusyCalInstallation());
+        const input = buildBusyCalEventInput(values);
+
+        await createBusyCalEvent(activeInstallation, input);
+
+        // Raycast keeps forms on screen after submit by default. Embedded flows can
+        // opt into popping back to the previous screen once the BusyCal mutation completes.
+        await showToast({
+          style: Toast.Style.Success,
+          title: "BusyCal event created",
+          message: input.title,
+        });
+
+        if (props.popOnSuccess) {
+          await pop();
         }
       } catch (error) {
-        if (!didCancel) {
-          setInstallationError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (!didCancel) {
-          setIsLoading(false);
-        }
+        await showFailureToast(error, {
+          title: "Could Not Create Event",
+        });
       }
-    }
-
-    void loadCalendars();
-    return () => {
-      didCancel = true;
-    };
-  }, []);
+    },
+  });
 
   const calendarItems = useMemo(
     () =>
-      calendars.map((calendar) => (
+      (calendars ?? []).map((calendar) => (
         <Form.Dropdown.Item
           key={calendar.calendarID}
           value={calendar.calendarID}
@@ -76,19 +115,6 @@ export function CreateEventForm(props: CreateEventFormProps) {
       )),
     [calendars],
   );
-
-  async function handleSubmit(values: EventFormValues) {
-    const installation = await resolveBusyCalInstallation();
-    const input = buildBusyCalEventInput(values);
-
-    await createBusyCalEvent(installation, input);
-
-    await showToast({
-      style: Toast.Style.Success,
-      title: "BusyCal event created",
-      message: input.title,
-    });
-  }
 
   return (
     <Form
@@ -103,50 +129,28 @@ export function CreateEventForm(props: CreateEventFormProps) {
         </ActionPanel>
       }
     >
-      {installationError ? <Form.Description text={installationError} /> : null}
+      {errorMessage ? <Form.Description text={errorMessage} /> : null}
       <Form.TextField
-        id="title"
         title="Title"
         placeholder="Team sync"
-        defaultValue={props.initialValues?.title}
+        {...itemProps.title}
       />
-      <Form.Dropdown
-        id="calendarID"
-        title="Calendar"
-        defaultValue={props.initialValues?.calendarID ?? ""}
-      >
+      <Form.Dropdown title="Calendar" {...itemProps.calendarID}>
         <Form.Dropdown.Item value="" title="BusyCal Default Calendar" />
         {calendarItems}
       </Form.Dropdown>
-      <Form.DatePicker
-        id="startDate"
-        title="Starts"
-        value={startDate}
-        onChange={setStartDate}
-      />
-      <Form.DatePicker
-        id="endDate"
-        title="Ends"
-        value={endDate}
-        onChange={setEndDate}
-      />
-      <Form.Checkbox
-        id="allDay"
-        label="All-day event"
-        value={allDay}
-        onChange={setAllDay}
-      />
+      <Form.DatePicker title="Starts" {...itemProps.startDate} />
+      <Form.DatePicker title="Ends" {...itemProps.endDate} />
+      <Form.Checkbox title="" label="All-day event" {...itemProps.allDay} />
       <Form.TextField
-        id="location"
         title="Location"
         placeholder="Apple Park"
-        defaultValue={props.initialValues?.location}
+        {...itemProps.location}
       />
       <Form.TextArea
-        id="notes"
         title="Notes"
         placeholder="Optional notes"
-        defaultValue={props.initialValues?.notes}
+        {...itemProps.notes}
       />
     </Form>
   );

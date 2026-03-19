@@ -1,12 +1,15 @@
-import { open as openURL } from "@raycast/api";
 import { openBusyCalAutomationItem } from "./busycal-automation";
-import { isUnsupportedOpenItemCommandError } from "./busycal-open-item-support";
+import { isUnsupportedOpenItemCommandError } from "./busycal-command-support";
 import { execFileText } from "./shell";
 import { BusyCalInstallation, BusyCalItem } from "./types";
 import { busyCalURLLaunchArguments } from "./busycal-url-launch";
 
 /**
  * Opens one BusyCal URL through Launch Services.
+ *
+ * - Parameters:
+ *   - installation: The BusyCal app install that should own the URL open.
+ *   - url: The BusyCal custom URL to launch.
  */
 export async function openBusyCalURL(
   installation: BusyCalInstallation,
@@ -20,6 +23,17 @@ export async function openBusyCalURL(
 
 /**
  * Opens one BusyCal item in the BusyCal UI.
+ *
+ * The extension intentionally routes reveal through BusyCal's canonical
+ * automation command instead of rebuilding item URLs from partial metadata.
+ * That keeps dated tasks, undated tasks, recurring tasks, and detached events
+ * aligned with the app's own identity rules.
+ *
+ * - Parameters:
+ *   - installation: The BusyCal app install that should reveal the item.
+ *   - item: The normalized BusyCal item returned by automation.
+ * - Throws: When BusyCal does not provide a canonical item identity or when the
+ *   installed BusyCal build predates the `open item` scripting command.
  */
 export async function openBusyCalItem(
   installation: BusyCalInstallation,
@@ -35,20 +49,10 @@ export async function openBusyCalItem(
   try {
     await openBusyCalAutomationItem(installation, trimmedIdentity);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (isUnsupportedOpenItemCommandError(message)) {
-      throw new Error(
-        "This Raycast extension requires a BusyCal build that supports the `open item` scripting command.",
-      );
+    if (await isUnsupportedOpenItemCommandError(installation, error)) {
+      throw new Error("BusyCal 2026.1.3 or later is required for item reveal.");
     }
 
     throw error;
   }
-}
-
-/**
- * Opens one external URL in the system browser.
- */
-export async function openExternalURL(url: string): Promise<void> {
-  await openURL(url);
 }

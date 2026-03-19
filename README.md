@@ -49,3 +49,7 @@ The extension talks directly to BusyCal on your Mac. It does not send your calen
 
 - Documentation: <https://www.busymac.com/docs/busycal/70624-raycast>
 - Issues: <https://github.com/BeehiveInnovations/busycal-raycast/issues>
+
+## License
+
+MIT. Copyright (c) 2026 Beehive Innovations FZE.

@@ -6,56 +6,67 @@ import {
   showToast,
   Toast,
 } from "@raycast/api";
-import { useEffect, useMemo, useState } from "react";
-import { createBusyCalTask, listBusyCalCalendars } from "./busycal-automation";
+import { FormValidation, showFailureToast, useForm } from "@raycast/utils";
+import { useMemo } from "react";
+import { createBusyCalTask } from "./busycal-automation";
 import { buildBusyCalTaskInput } from "./busycal-form-submission";
 import { resolveBusyCalInstallation } from "./busycal-installation";
-import { BusyCalCalendar, TaskFormValues } from "./types";
+import { useBusyCalCalendars, useBusyCalInstallation } from "./busycal-hooks";
+import { TaskFormValues } from "./types";
 
 /**
  * Raycast command entry point for structured BusyCal task creation.
  */
 export default function CreateTaskCommand() {
-  const [installationError, setInstallationError] = useState<string>();
-  const [calendars, setCalendars] = useState<BusyCalCalendar[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasDueDate, setHasDueDate] = useState(true);
-  const [dueDate, setDueDate] = useState(new Date());
-
-  useEffect(() => {
-    let didCancel = false;
-
-    async function loadCalendars() {
+  const {
+    data: installation,
+    error: installationError,
+    isLoading: isLoadingInstallation,
+  } = useBusyCalInstallation();
+  const {
+    data: calendars,
+    error: calendarsError,
+    isLoading: isLoadingCalendars,
+  } = useBusyCalCalendars(installation, "task");
+  const isLoading = isLoadingInstallation || isLoadingCalendars;
+  const errorMessage = calendarsError?.message ?? installationError?.message;
+  const { handleSubmit, itemProps } = useForm<TaskFormValues>({
+    initialValues: {
+      title: "",
+      calendarID: "",
+      hasDueDate: true,
+      dueDate: new Date(),
+      notes: "",
+    },
+    validation: {
+      title: FormValidation.Required,
+    },
+    async onSubmit(values) {
       try {
-        const installation = await resolveBusyCalInstallation();
-        const availableCalendars = await listBusyCalCalendars(installation);
-        if (!didCancel) {
-          setCalendars(
-            availableCalendars.filter((calendar) => calendar.supportsTasks),
-          );
-        }
-      } catch (error) {
-        if (!didCancel) {
-          setInstallationError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (!didCancel) {
-          setIsLoading(false);
-        }
-      }
-    }
+        const activeInstallation =
+          installation ?? (await resolveBusyCalInstallation());
+        const input = buildBusyCalTaskInput(values);
 
-    void loadCalendars();
-    return () => {
-      didCancel = true;
-    };
-  }, []);
+        await createBusyCalTask(activeInstallation, input);
+
+        // The success toast is the visible completion signal because Raycast does
+        // not automatically dismiss or navigate away from the form after submit.
+        await showToast({
+          style: Toast.Style.Success,
+          title: "BusyCal task created",
+          message: input.title,
+        });
+      } catch (error) {
+        await showFailureToast(error, {
+          title: "Could Not Create Task",
+        });
+      }
+    },
+  });
 
   const calendarItems = useMemo(
     () =>
-      calendars.map((calendar) => (
+      (calendars ?? []).map((calendar) => (
         <Form.Dropdown.Item
           key={calendar.calendarID}
           value={calendar.calendarID}
@@ -64,19 +75,6 @@ export default function CreateTaskCommand() {
       )),
     [calendars],
   );
-
-  async function handleSubmit(values: TaskFormValues) {
-    const installation = await resolveBusyCalInstallation();
-    const input = buildBusyCalTaskInput(values);
-
-    await createBusyCalTask(installation, input);
-
-    await showToast({
-      style: Toast.Style.Success,
-      title: "BusyCal task created",
-      message: input.title,
-    });
-  }
 
   return (
     <Form
@@ -91,29 +89,23 @@ export default function CreateTaskCommand() {
         </ActionPanel>
       }
     >
-      {installationError ? <Form.Description text={installationError} /> : null}
+      {errorMessage ? <Form.Description text={errorMessage} /> : null}
       <Form.TextField
-        id="title"
         title="Title"
         placeholder="Finish expense report"
+        {...itemProps.title}
       />
-      <Form.Dropdown id="calendarID" title="Task List" defaultValue="">
+      <Form.Dropdown title="Task List" {...itemProps.calendarID}>
         <Form.Dropdown.Item value="" title="BusyCal Default Task Calendar" />
         {calendarItems}
       </Form.Dropdown>
-      <Form.Checkbox
-        id="hasDueDate"
-        label="Set due date"
-        value={hasDueDate}
-        onChange={setHasDueDate}
+      <Form.Checkbox title="" label="Set due date" {...itemProps.hasDueDate} />
+      <Form.DatePicker title="Due" {...itemProps.dueDate} />
+      <Form.TextArea
+        title="Notes"
+        placeholder="Optional notes"
+        {...itemProps.notes}
       />
-      <Form.DatePicker
-        id="dueDate"
-        title="Due"
-        value={dueDate}
-        onChange={setDueDate}
-      />
-      <Form.TextArea id="notes" title="Notes" placeholder="Optional notes" />
     </Form>
   );
 }

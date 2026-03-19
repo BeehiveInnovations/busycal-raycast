@@ -10,12 +10,19 @@ import { openBusyCalItem, openBusyCalURL } from "./busycal-url";
 import { BusyCalInstallation, BusyCalItem } from "./types";
 
 /**
- * Standard action panel shared by BusyCal item list commands.
+ * Props for the shared BusyCal item action panel.
  */
-export function BusyCalItemActions(props: {
+interface BusyCalItemActionsProps {
   installation: BusyCalInstallation;
   item: BusyCalItem;
-}) {
+}
+
+/**
+ * Standard action panel shared by BusyCal item list commands.
+ *
+ * - Parameter props: The resolved BusyCal install plus the selected item.
+ */
+export function BusyCalItemActions(props: BusyCalItemActionsProps) {
   const { installation, item } = props;
   const dateURL = busyCalDateURL(item);
   const detailLines = [

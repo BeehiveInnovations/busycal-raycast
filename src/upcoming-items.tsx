@@ -1,70 +1,71 @@
 import { getPreferenceValues, Icon, List } from "@raycast/api";
-import { useEffect, useState } from "react";
+import { useCachedPromise } from "@raycast/utils";
 import { queryBusyCalItems } from "./busycal-automation";
 import { busyCalSortTimestamp, formatOccurrence } from "./busycal-date";
-import { resolveBusyCalInstallation } from "./busycal-installation";
-import { BusyCalItem, BusyCalInstallation, Preferences } from "./types";
+import { useBusyCalInstallation } from "./busycal-hooks";
+import { BusyCalItem } from "./types";
 import { BusyCalItemActions } from "./item-actions";
 
 /**
  * Raycast command entry point for the upcoming BusyCal list.
  */
 export default function UpcomingItemsCommand() {
-  const preferences = getPreferenceValues<Preferences>();
-  const [installation, setInstallation] = useState<BusyCalInstallation>();
-  const [items, setItems] = useState<BusyCalItem[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string>();
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let didCancel = false;
-
-    async function loadUpcomingItems() {
-      try {
-        const resolvedInstallation = await resolveBusyCalInstallation();
-        const horizonDays = Number(preferences.defaultUpcomingDays || "7");
-        const startDate = new Date();
-        const endDate = new Date(
-          startDate.getTime() + horizonDays * 24 * 60 * 60 * 1000,
-        );
-        const types = preferences.includeTasksInUpcoming
-          ? (["event", "task"] as const)
-          : (["event"] as const);
-        const upcomingItems = await queryBusyCalItems(resolvedInstallation, {
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          itemTypes: [...types],
-          fetchLimit: 100,
-        });
-        const sortedItems = [...upcomingItems].sort(
-          (left, right) =>
-            (busyCalSortTimestamp(left) ?? Number.MAX_SAFE_INTEGER) -
-            (busyCalSortTimestamp(right) ?? Number.MAX_SAFE_INTEGER),
-        );
-
-        if (!didCancel) {
-          setInstallation(resolvedInstallation);
-          setItems(sortedItems);
-          setErrorMessage(undefined);
-        }
-      } catch (error) {
-        if (!didCancel) {
-          setErrorMessage(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (!didCancel) {
-          setIsLoading(false);
-        }
+  const preferences = getPreferenceValues<Preferences.UpcomingItems>();
+  const {
+    data: installation,
+    error: installationError,
+    isLoading: isLoadingInstallation,
+  } = useBusyCalInstallation();
+  const {
+    data: items = [],
+    error: upcomingError,
+    isLoading: isLoadingUpcoming,
+  } = useCachedPromise(
+    async (
+      activeInstallation: typeof installation,
+      upcomingDays: string,
+      includeTasks: boolean,
+    ) => {
+      if (!activeInstallation) {
+        return [];
       }
-    }
 
-    void loadUpcomingItems();
-    return () => {
-      didCancel = true;
-    };
-  }, [preferences.defaultUpcomingDays, preferences.includeTasksInUpcoming]);
+      const horizonDays = Number(upcomingDays || "7");
+      const startDate = new Date();
+      const endDate = new Date(
+        startDate.getTime() + horizonDays * 24 * 60 * 60 * 1000,
+      );
+      const types = includeTasks
+        ? (["event", "task"] as const)
+        : (["event"] as const);
+      const upcomingItems = await queryBusyCalItems(activeInstallation, {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        itemTypes: [...types],
+        fetchLimit: 100,
+      });
+      // BusyCal returns mixed events and tasks; sorting on the normalized
+      // timestamp keeps due-dated tasks and event occurrences in one timeline.
+      return [...upcomingItems].sort(
+        (left, right) =>
+          (busyCalSortTimestamp(left) ?? Number.MAX_SAFE_INTEGER) -
+          (busyCalSortTimestamp(right) ?? Number.MAX_SAFE_INTEGER),
+      );
+    },
+    [
+      installation,
+      preferences.defaultUpcomingDays || "7",
+      preferences.includeTasksInUpcoming,
+    ],
+    {
+      execute: Boolean(installation),
+      initialData: [] as BusyCalItem[],
+      keepPreviousData: true,
+      onError: () => {},
+    },
+  );
+  const errorMessage = upcomingError?.message ?? installationError?.message;
+  const isLoading = isLoadingInstallation || isLoadingUpcoming;
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Upcoming BusyCal items">

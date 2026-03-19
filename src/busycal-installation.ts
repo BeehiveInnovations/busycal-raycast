@@ -34,6 +34,10 @@ export class BusyCalInstallationError extends Error {
  * The resolver prefers the currently running BusyCal edition so Raycast does
  * not silently talk to the wrong install when both direct-download and Setapp
  * copies are present on the same Mac.
+ *
+ * - Returns: The single BusyCal installation that should receive Raycast commands.
+ * - Throws: ``BusyCalInstallationError`` when BusyCal is missing or when the
+ *   installed/running app state is ambiguous.
  */
 export async function resolveBusyCalInstallation(): Promise<BusyCalInstallation> {
   const installed = await discoverBusyCalInstallations();
@@ -69,6 +73,16 @@ export async function resolveBusyCalInstallation(): Promise<BusyCalInstallation>
   );
 }
 
+/**
+ * Discovers BusyCal installs from Spotlight plus the standard app locations
+ * that users actually launch from.
+ *
+ * The trusted-root filter deliberately ignores developer and build folders so
+ * Raycast never targets a random local build when a normal installed copy is
+ * also present on disk.
+ *
+ * - Returns: A de-duplicated, priority-sorted list of supported BusyCal installs.
+ */
 async function discoverBusyCalInstallations(): Promise<BusyCalInstallation[]> {
   const query = [
     "kMDItemCFBundleIdentifier == 'com.busymac.busycal3'",
@@ -116,6 +130,16 @@ async function discoverBusyCalInstallations(): Promise<BusyCalInstallation[]> {
   );
 }
 
+/**
+ * Checks whether an app path is safe for end-user automation.
+ *
+ * Raycast should only drive BusyCal installs from the normal Applications
+ * folders. Excluding developer/build directories keeps the extension aligned
+ * with the app copy the user is most likely interacting with.
+ *
+ * - Parameter candidatePath: One discovered app bundle path.
+ * - Returns: `true` when the path points to a trusted installed copy of BusyCal.
+ */
 function isTrustedInstallPath(candidatePath: string): boolean {
   const standardizedPath = path.resolve(candidatePath);
   const withinTrustedRoot = trustedRoots.some(
@@ -132,6 +156,13 @@ function isTrustedInstallPath(candidatePath: string): boolean {
     .every((component) => !blockedComponents.has(component));
 }
 
+/**
+ * Assigns the stable install preference order used when multiple copies share
+ * the same bundle identifier.
+ *
+ * - Parameter candidatePath: One trusted BusyCal app path.
+ * - Returns: A lower number for the install that should win resolution.
+ */
 function installPathPriority(candidatePath: string): number {
   if (candidatePath.startsWith("/Applications/BusyCal.app")) {
     return 0;
@@ -152,6 +183,12 @@ function installPathPriority(candidatePath: string): number {
   return 3;
 }
 
+/**
+ * Reads the bundle identifier from one BusyCal app bundle.
+ *
+ * - Parameter appPath: Absolute path to the `.app` bundle.
+ * - Returns: The bundle identifier declared in `Info.plist`.
+ */
 async function readBundleIdentifier(appPath: string): Promise<string> {
   const plistPath = path.join(appPath, "Contents", "Info.plist");
   return execFileText("plutil", [
@@ -164,6 +201,12 @@ async function readBundleIdentifier(appPath: string): Promise<string> {
   ]);
 }
 
+/**
+ * Checks whether a specific BusyCal bundle identifier is currently running.
+ *
+ * - Parameter bundleId: The bundle identifier to query via System Events.
+ * - Returns: `true` when at least one process with that bundle identifier is active.
+ */
 async function isBundleRunning(bundleId: string): Promise<boolean> {
   const script = `tell application "System Events" to count (every process whose bundle identifier is "${bundleId}")`;
   const output = await execFileText("osascript", ["-e", script]).catch(
